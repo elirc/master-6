@@ -1,0 +1,22 @@
+{
+  "project": "_Organized Desktop/03 Master Projects/master 6",
+  "id": "3e4e08e349a1",
+  "command": [
+    "node",
+    "C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js",
+    "run",
+    "db:generate"
+  ],
+  "cwd": "C:\\Users\\Owner\\Desktop\\AstraOrganized2\\astra-remaining-improvements\\stage\\3e4e08e349a1",
+  "environmentOverrides": {
+    "DATABASE_URL": "postgresql://learning:learning@127.0.0.1:5432/learning"
+  },
+  "startedAt": "2026-09-12T23:10:46.187066+00:00",
+  "status": "complete",
+  "log": "root-generate-01.log",
+  "pid": 22136,
+  "exitCode": 0,
+  "passed": true,
+  "finishedAt": "2026-09-12T23:13:16.969208+00:00",
+  "elapsedSeconds": 150.78
+}

@@ -1,0 +1,24 @@
+{
+  "project": "_Organized Desktop/03 Master Projects/master 6",
+  "id": "3e4e08e349a1",
+  "command": [
+    "cmd.exe",
+    "/d",
+    "/c",
+    "npm",
+    "run",
+    "test",
+    "--workspace",
+    "@lms/api"
+  ],
+  "cwd": "C:\\Users\\Owner\\Desktop\\AstraOrganized2\\astra-remaining-improvements\\stage\\3e4e08e349a1",
+  "environmentOverrides": {},
+  "startedAt": "2026-09-13T00:06:03.566238+00:00",
+  "status": "complete",
+  "log": "root-luna-master6-api-tests-full-final-01.log",
+  "pid": 1268,
+  "exitCode": 0,
+  "passed": true,
+  "finishedAt": "2026-09-13T00:07:29.224366+00:00",
+  "elapsedSeconds": 85.66
+}

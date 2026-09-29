@@ -1,0 +1,24 @@
+{
+  "name": "enterprise-lms-certification-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A realistic enterprise learning management and certification platform built as a TypeScript modular monolith learning codebase.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @lms/api & npm run dev --workspace @lms/web",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "db:generate": "npm run prisma:generate --workspace @lms/api",
+    "db:migrate": "npm run prisma:migrate --workspace @lms/api",
+    "db:seed": "npm run seed --workspace @lms/api",
+    "verify": "npm run typecheck && npm run test && npm run build"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

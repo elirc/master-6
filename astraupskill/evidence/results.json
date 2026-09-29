@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "total": 29,
+  "tests": 29,
+  "failed": 0,
+  "checks": [
+    "root-install-01",
+    "root-generate-01",
+    "root-luna-master6-domain-tests-final-02",
+    "root-luna-master6-api-tests-full-final-01",
+    "root-luna-master6-web-tests-final-01",
+    "root-luna-master6-worker-tests-final-01",
+    "root-luna-master6-typecheck-full-final-01",
+    "root-build-final-01"
+  ],
+  "scope": "15 actual domain cases plus14 API cases (13 production learner-router cases with Prisma/auth/event/audit spies, one app construction). Web/worker commands discover zero tests. Workspace typecheck and ordered production build pass; no live database/Redis/browser."
+}
