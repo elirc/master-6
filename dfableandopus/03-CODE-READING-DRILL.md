@@ -25,7 +25,7 @@ Say what the two branches mean, and what an empty array does that `undefined` do
 <details>
 <summary>Answer</summary>
 
-The function is pure: no Prisma import, no dates read from the clock, plain summary objects in and a boolean out. That is why it lives in `@lms/domain` and carries 15 of the 29 tests.
+The function is pure: no Prisma import, no dates read from the clock, plain summary objects in and a boolean out. That is why it lives in `@lms/domain` and carries 15 of the 31 tests.
 
 The lesson check is a named-ids branch and a blanket branch. When `requiredLessonIds` is present, every named id must have a `COMPLETED` progress row; ids are matched by value, so a lesson with no row at all fails. When it is `undefined`, the rule falls back to `requireAllLessons`: if that is false the requirement is vacuous, and if it is true then progress must be non-empty and every row `COMPLETED`.
 
@@ -129,12 +129,12 @@ Three defects.
 2. The `where` lost `quizId: quiz.id`, so the count is every attempt on the enrollment across every quiz. A learner who passed three other quizzes is now refused their first attempt at this one, and `attemptNumber` becomes a number that has nothing to do with this quiz.
 3. `recordDomainEvent` lost its second argument. `apps/api/src/events.ts:6` declares `client: Prisma.TransactionClient = prisma`, so dropping `tx` silently writes the `domainEvent` and `outboxMessage` rows on the global client. The event then survives a rollback of the attempt, which is the exact failure the outbox is supposed to prevent. Nothing in the type system catches this; `apps/api/src/routes/learner.routes.test.ts:64` catches the same mistake in the complete handler by asserting the second argument is the transaction client.
 
-What the diff does not fix is the real problem in this code: the count-then-insert is read-then-write, and at read-committed isolation two concurrent attempts can both pass the `maxAttempts` check. The fix is a unique constraint on `(enrollmentId, quizId, attemptNumber)`, not a rearrangement of the read.
+What the diff does not fix is the real problem in this code: the count-then-insert is read-then-write, and at read-committed isolation two concurrent attempts can both pass the `maxAttempts` check. The unique constraint on `(quizId, enrollmentId, attemptNumber)` (`apps/api/prisma/schema.prisma:291`) already rejects the second insert; what is missing is mapping that P2002 to a 409 rather than a 500, not a rearrangement of the read.
 </details>
 
 ## Drill 6: explain this function
 
-`apps/api/src/events.ts:4-25`, condensed.
+`apps/api/src/events.ts:4-28`, condensed.
 
 ```ts
 export async function recordDomainEvent(

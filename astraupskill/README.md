@@ -8,10 +8,10 @@ The course has seven reading chapters and one verification page. Read them in or
 2. [02 - Concepts](./02-CONCEPTS.md) defines ownership, published version selection, requirement sets, timestamps, and replay.
 3. [03 - Worked change](./03-WORKED-CHANGE.md) walks through the actual enrollment and completion code with small excerpts.
 4. [04 - Testing and debugging](./04-TESTING-AND-DEBUGGING.md) shows the real Vitest router fixture and how to diagnose a failed request.
-5. [05 - Practice](./05-PRACTICE.md) gives nine exercises against the routes and domain rule.
-6. [06 - Solutions and review](./06-SOLUTIONS-AND-REVIEW.md) answers Exercises 0 through 8 and identifies remaining boundaries.
+5. [05 - Practice](./05-PRACTICE.md) gives eleven Goal + Check exercises; six of them are runnable `node --test` files against the domain package (no install needed).
+6. [06 - Solutions and review](./06-SOLUTIONS-AND-REVIEW.md) answers Exercises 1-11 and records eight senior review findings (state races, cross-tenant reads and writes, resubmission regression) with file:line evidence.
 7. [07 - Trace lab](./07-TRACE-LAB.md) traces one learner from enrollment through a stable completion replay.
-8. [VERIFICATION](./VERIFICATION.md) lists the project-relative checks and evidence links.
+8. [VERIFICATION](./VERIFICATION.md) lists the recorded checks (a frozen 2026-09-13 record) and what they do not cover.
 
 The implementation files referenced throughout are [`apps/api/src/routes/learner.routes.ts`](../apps/api/src/routes/learner.routes.ts), [`packages/domain/src/completion.ts`](../packages/domain/src/completion.ts), [`apps/api/src/events.ts`](../apps/api/src/events.ts), and [`apps/api/src/audit.ts`](../apps/api/src/audit.ts). The primary route fixture is [`apps/api/src/routes/learner.routes.test.ts`](../apps/api/src/routes/learner.routes.test.ts); domain behavior is covered in [`packages/domain/src/domain.test.ts`](../packages/domain/src/domain.test.ts). Examples use the actual field names `courseVersionId`, `completionRuleJson`, `lessonProgress`, `quizAttempts`, and `submissions`.
 
@@ -40,5 +40,5 @@ Keep the distinction between an enrollment and a course current version in mind 
 
 ## Pacing
 
-map 45 min, concepts 75 min, worked change 90 min, testing 60 min, practice 4-6 h (the implement-it exercises), solutions 45 min, trace lab 45 min. Do the practice exercises in order; each names its acceptance test.
+map 45 min, concepts 75 min, worked change 90 min, testing 60 min, practice 2-3 h, solutions 45 min, trace lab 45 min. Do the practice exercises in order; each names its Check.
 

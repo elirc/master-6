@@ -12,6 +12,19 @@ The schema source is [`../apps/api/prisma/schema.prisma`](../apps/api/prisma/sch
 
 All route paths in this chapter are relative to learnerRouter. The actual app mounts it at /learner in apps/api/src/app.ts, so the HTTP enrollment path is POST /learner/courses/:courseId/enroll. Production requireAuth verifies a bearer JWT and loads current memberships from Prisma; the route test replaces that middleware. The organization header selects a tenant within those memberships and is not itself authentication.
 
+## Line index for `learner.routes.ts`
+
+| lines | what |
+|---|---|
+| 15-21 | `organizationFor`: header must match a loaded membership, else 403 |
+| 23-58 | `GET /dashboard`: enrollments scoped by `organizationId` + `userId` |
+| 60-105 | enroll: published course + published current version, one transaction, P2002 to 409 (line 101) |
+| 107-146 | lesson progress: scoped enrollment, lesson under enrolled version, timestamp rules at 125-126 |
+| 148-209 | quiz attempt: version check at 166, count + create + event in one transaction (170-205) |
+| 211-253 | assignment submission: version-scoped lookup at 219, upsert at 222-242 |
+| 255-332 | completion: scoped `findUnique` (260-270), replay guard (275-278), rule + checks (280-290), transaction (299-328) |
+| 334-384 | `completionRuleFor`: validates stored JSON, derives omitted ID lists from the enrolled version |
+
 ## The four workspaces, and what to ignore for now
 
 | workspace | owns | files this course touches |
@@ -19,7 +32,7 @@ All route paths in this chapter are relative to learnerRouter. The actual app mo
 | `packages/domain` | pure rules: `isCourseComplete`, requirement lists, status transitions | `src/completion.ts` and its tests |
 | `apps/api` | Express routes, Prisma, transactions, events | `src/routes/learner.routes.ts`, `src/events.ts`, `src/routes/learner.routes.test.ts` |
 | `apps/web` | the Next.js UI | none: ignore for now |
-| `apps/worker` | outbox delivery (no tests) | none: read chapter 2's outbox section only |
+| `apps/worker` | BullMQ workers, including a placeholder outbox dispatcher (no tests) | none: read chapter 2's outbox section only |
 
 Terms used before they are defined elsewhere: **IDOR** (insecure direct object reference: a request names an id it should not be allowed to touch; the three-scope guard organization/user/version is the defense); **transaction client** (`tx` inside `prisma.$transaction(async (tx) => ...)`: every write that must commit together goes through it, not through `prisma`); **outbox** (a row written in the same transaction as the change, delivered later by a worker); **P2002** (Prisma's unique-constraint violation code, mapped to 409 in the enroll route).
 

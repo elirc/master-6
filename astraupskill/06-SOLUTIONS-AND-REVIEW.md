@@ -1,227 +1,173 @@
 # 06 - Solutions and review
 
-**Exercise 0:** `organizationFor` runs first. It checks the selected header against `request.user.memberships` and throws `HttpError(403, "Learner is not a member of this organization")`. A handler uses the caller-selected organization only after that membership check passes.
+Line numbers refer to `apps/api/src/routes/learner.routes.ts` unless another
+file is named.
 
-**Exercise 1:** Enrollment uses neither version. The course query succeeds, but the version query requires the current pointer and `status: "PUBLISHED"`; a draft pointer produces `HttpError(404, "Published course version not found")`. This protects the promise that new learners begin on the course's published current version.
+## Answers
 
-**Exercise 2:** The quiz query returns an object whose `courseVersionId` is `version-2`, then `quiz.courseVersionId !== enrollment.courseVersionId` is true. The route throws 404 before opening its transaction, so `quizAttempt.create` is never called. The lesson and assignment routes use analogous version checks.
+**Exercise 1.** `organizationFor` (lines 15-21) runs first in every handler.
+It reads `x-organization-id` and checks it against `request.user.memberships`;
+a missing header or a non-member organization throws
+`HttpError(403, "Learner is not a member of this organization")`. The header
+*selects* a tenant among memberships loaded by `requireAuth`; it is not
+authentication.
 
-**Exercise 3:** `isCourseComplete` returns false. `requiredQuizIds.every(...)` asks for a passing attempt for `quiz-1`; `[].some(...)` is false. The route does not infer a pass from enrollment or from the absence of a failed attempt.
+**Exercise 2.** Neither. The course query (line 66) succeeds, but the version
+query (line 70) requires `id: course.currentVersionId`, the same `courseId`
+and `status: "PUBLISHED"`; the draft pointer yields
+`404 "Published course version not found"` (line 73). New learners only ever
+attach to the published current version.
 
-**Exercise 4:** It returns true. Both assessment arrays are explicitly empty, so their `every` predicates have no required IDs. The lesson requirement still requires `lesson-1`; `requireAssignmentsGraded` does not manufacture an assignment ID when `requiredAssignmentIds` is present and empty. This is the documented zero-assessment configuration.
+**Exercise 3.** `quiz.courseVersionId !== enrollment.courseVersionId`
+(line 166) throws **404** `"Quiz not found"` before the transaction, so
+`quizAttempt.create` is never called. The lesson (line 116) and assignment
+(line 220) routes scope the lookup itself by `courseVersionId` and also
+answer 404. All three deliberately use 404, not 403: the response does not
+reveal whether the content exists in another version.
 
-**Exercise 5:** `startedAt` remains unchanged. The update uses `current.startedAt ?? now`; it sets `completedAt` to null for `IN_PROGRESS`. A later `COMPLETED` write uses a fresh time only when `completedAt` is still null.
+**Exercise 4.** `false`, `false` then `true`, and `false`. In
+`packages/domain/src/completion.ts` line 34 every candidate attempt must have
+`attempt.passed` *and* (line 35) a score at or above `minimumQuizScore`.
+`[].some(...)` is `false`, so an absent attempt can never satisfy a required
+ID.
 
-**Exercise 6:** The transaction client must receive `enrollment.update`, conditional `certificate.create`, `auditLog(..., tx)`, and `recordDomainEvent(..., tx)`. The event helper then uses that client for both `DomainEvent.create` and `OutboxMessage.create`. If a helper silently uses global `prisma`, a later rollback could leave an audit or event behind.
+**Exercise 5.** The explicit `[]` makes `every` vacuously true; the omitted
+list falls to line 43, which needs at least one submission. The route never
+sends that second shape unchanged: `completionRuleFor` (line 380) derives the
+enrolled version's assignment IDs whenever `requireAssignmentsGraded === true`
+and the list is omitted. The legacy `requireAllLessons` path (line 28) needs
+`lessonProgress.length > 0`.
 
-**Exercise 7:** The route returns HTTP 200 and the same `certificate-1`. The fixture observes zero new transaction, certificate, audit, or event calls. This is a stable replay contract, not a distributed idempotency guarantee for two simultaneous requests.
+**Exercise 6.** It completes; percent is 50; `canIssueCertificate` is false
+because it requires exactly 100. The transaction still writes the enrollment
+update, the `enrollment.completed` audit row, and the domain event plus
+outbox row, with `certificateId: undefined` in their payloads.
 
-**Exercise 8:** The mock suite cannot prove transaction rollback, database uniqueness under races, generated SQL, or eventual outbox delivery. The actual route tests are in [`../apps/api/src/routes/learner.routes.test.ts`](../apps/api/src/routes/learner.routes.test.ts). From the project root, run `npm run test --workspace @lms/api -- --run src/routes/learner.routes.test.ts` and `npm run test --workspace @lms/domain`.
+**Exercise 7.** `IN_PROGRESS`: `startedAt` kept (`current.startedAt ?? now`,
+line 126), `completedAt` set to `null` (line 125). `COMPLETED` again:
+`completedAt` is null, so it becomes the new `now`; the first completion
+time is lost. Nothing checks whether the *enrollment* is already
+`COMPLETED`.
 
-Review outcome: the implementation now has explicit ownership and version guards, required-set evaluation, transaction-aware event and audit helpers, and stable completion replay. The remaining review questions are operational: certificate verification-code uniqueness is not a global service here, and no worker or live database is part of this bounded change. Those limitations should stay visible in a pull request rather than being hidden by broad test names.
+**Exercise 8.** Same seed, same selection, so attempt 1 always gets the same
+questions. A request that failed (for example, its transaction rolled back)
+did not create a `QuizAttempt`, so `attemptCount` is unchanged and the retry
+reuses the seed: the learner sees the same question set rather than
+"rerolling" by forcing errors. `scoreQuiz` ignores answers to questions outside
+the scored set and sorts option IDs before comparing.
 
-The parser tests are deliberately route-level because malformed `completionRuleJson` is stored data reaching an API boundary. The suite covers an out-of-range score and asserts 500 with no completion transaction. A stronger future database test could exercise malformed JSON loaded from a real row, but it should preserve the same before-write guarantee.
+**Exercise 9.** See Finding 2 for the change.
 
-## Implement-it exercise answers
+**Exercise 10.** See Finding 1.
 
-**9.** The guard is one `findFirst` with `where: { id, organizationId, userId }` before any write; a quiz check compares `quiz.courseVersionId` with `enrollment.courseVersionId`. 404 for the first two (do not reveal existence), 403 for the version mismatch (the enrollment exists and is yours, but the content is not part of it).
+**Exercise 11.** The mocks cannot prove rollback, unique-constraint behavior
+under concurrency, generated SQL, or outbox delivery. Commands:
+`npm run test --workspace @lms/api` and `npm run test --workspace @lms/domain`
+(after `npm ci` and `npm run db:generate`).
 
-**10.** Inside `prisma.$transaction`: `enrollment.update` with a `WHERE status <> "WITHDRAWN"` guard (Prisma: `updateMany` and check `count`), `lessonProgress.deleteMany({ where: { enrollmentId, status: "NOT_STARTED" } })`, then `recordDomainEvent(..., tx)`. A `count` of 0 means already withdrawn: throw `HttpError(409)` inside the callback so nothing else runs.
+## Senior review findings
 
-**11.** The failing assertion is `expect(isCourseComplete(rule, emptyProgress)).toBe(false)`; the fix distinguishes "no requirements" (nothing to complete, so not complete) from "all requirements met". Keep the existing tests green: they cover the populated cases.
+These were found by reading the code at this commit; none is fixed or covered
+by the current suites.
 
-## Replay and remaining behavior
+**Finding 1 - Resubmission silently un-grades work.** The upsert's `update`
+branch (lines 231-235) sets `content`, `status: "SUBMITTED"` and
+`submittedAt` unconditionally. A `GRADED` submission with `score: 92` becomes
+`SUBMITTED` while keeping `score`, `feedback`, `gradedAt` and `gradedById`
+(schema `AssignmentSubmission`, lines 324-342), a contradictory row. None of
+the learner work routes (progress, attempts, submissions) reads
+`enrollment.status`, so this also works after the course is `COMPLETED`, and
+on `DROPPED`/`EXPIRED` enrollments, which no route in `apps/api/src` refers
+to. Fix: refuse resubmission when `status` is `GRADED` (or make the upsert's
+`where` conditional), and require `enrollment.status === "ACTIVE"` before any
+learner write.
 
-The terminal test starts from an already-completed fixture. It proves the guard returns its existing certificate and skips new work. The first completion response contains the updated scalar enrollment row, while a later response includes the relations loaded by findUnique. Stable status and certificate identity do not imply byte-identical response bodies. Concurrent first completions can both pass the pre-read guard; database uniqueness may reject one, and no retry/error policy for that race is added here.
+**Finding 2 - Concurrent first completions.** The terminal guard is a
+pre-read (line 275); the transaction's `enrollment.update` (lines 300-303)
+has no status predicate. Two simultaneous first requests both pass the guard.
+If a certificate is issued, `Certificate.enrollmentId @unique` (schema line
+346) makes the loser fail with Prisma `P2002`, which no handler maps, so
+`errorHandler` (`apps/api/src/http.ts` lines 41-44) returns **500 with the
+raw Prisma message**. If no certificate is issued, both commit: two audit
+rows, two `enrollment.completed` events and outbox messages, and an
+overwritten `completedAt` (Exercise 9 models both). Smallest fix: inside the
+transaction use
+`tx.enrollment.updateMany({ where: { id, status: { not: "COMPLETED" } }, data })`
+and, when `count === 0`, return the replay result before writing anything
+else. On PostgreSQL the second update waits for the first row lock and then
+re-checks the predicate.
 
-Certificate.enrollmentId and verificationCode already have unique constraints. The existing code derives verificationCode from the last eight enrollment-ID characters, so a collision can fail the transaction; uniqueness prevents duplicate codes but does not implement a collision retry. artifactUrl names a PDF without generating it in this command. Existing progress/submission endpoints can still change work after enrollment completion, and completion is not restricted to ACTIVE status. These remain separate lifecycle work. Quiz count-plus-one is not a proven concurrent retake limit. Production JWT verification exists, but the default development secret is unchanged and the existing error middleware can expose unexpected Error.message text; this suite does not validate production identity or error disclosure.
+**Finding 3 - Cross-tenant catalog read leaks answer keys and password
+hashes.** `GET /catalog/courses/:courseId` (`apps/api/src/routes/catalog.routes.ts`
+lines 72-102) requires only authentication; it looks the course up by `id`
+alone, without an organization filter or membership check. It returns every version
+(drafts included), quiz options with `isCorrect` (line 86; schema line 271),
+and discussion posts with `author: true` (line 82). `author: true` returns all
+`User` scalars, including `email` and `passwordHash` (schema lines 85-90).
+Course IDs are easy to get: the list route (lines 20-29) trusts
+`x-organization-id` without checking membership and accepts
+`?status=DRAFT`. Fix: scope by a verified membership, filter versions to
+`PUBLISHED` for learners, and use `select` for `author` and options.
 
-## Complete executed learner fixture
+**Finding 4 - Cross-tenant writes in authoring and grading.**
+`requireOrganizationRole` checks the role *in the header's organization*, but
+the targets are fetched by bare id: `POST /authoring/courses/:courseId/versions`
+(`authoring.routes.ts` lines 62-67), `POST /authoring/versions/:versionId/publish`
+(lines 133-154, which also repoints `course.currentVersionId`), and
+`POST /admin/submissions/:submissionId/grade` (`admin.routes.ts` lines
+86-104). An instructor in organization A who learns an ID from organization B
+can publish B's draft or grade B's learners. Fix: add `organizationId` (via
+`course`) to every `where`, and use `updateMany`/`findFirst` + count so a
+foreign ID becomes 404.
 
-This is the complete current thirteen-case file. Modify the existing file rather than adding a duplicate beside it. The one app-construction test and fifteen domain cases are separate. The actual event/audit helpers are intentionally mocked here; transaction-client argument assertions show the route passes the right object, not that a database committed or rolled back those records.
+**Finding 5 - Retake limit holds, but the loser gets a 500.** The count and
+create (lines 171-198) run inside an interactive transaction at PostgreSQL's
+default READ COMMITTED isolation, so two concurrent attempts can both read
+`attemptCount = n` and both try to create `attemptNumber: n + 1`. The
+`@@unique([quizId, enrollmentId, attemptNumber])` (schema line 291) stops the
+second one, so `maxAttempts` cannot be exceeded, but the unmapped `P2002`
+reaches the user as a 500. Map it to `409 "Quiz retake limit reached"`, or
+retry once.
 
-```ts
-import { describe, expect, it, vi } from "vitest";
+**Finding 6 - Verification code is derived, not secret.** `verificationCode`
+is `CERT-` plus the last 8 characters of the enrollment ID (line 311). The
+public `GET /certificates/verify/:code` (`certificate.routes.ts` lines 7-32,
+no auth) returns learner name and course title. Anyone who sees an enrollment
+ID can compute the code. The ID appears in event payloads, URLs and
+`artifactUrl` (line 306). Two IDs with the same tail also collide on the
+unique code (schema line 351), which aborts a legitimate completion with a
+500. Generate an independent random code and retry on collision.
 
-const testState = vi.hoisted(() => {
-  const calls = { transaction: 0, enrollmentCreate: 0, progressCreate: 0, progressUpdate: 0, attempts: 0, submissions: 0, events: 0, audits: 0, certificates: 0 };
-  const actor = { id: "learner-1", email: "learner@example.com", name: "Learner", memberships: [{ organizationId: "org-1", role: "LEARNER" as const }] };
-  const version = { id: "version-1", courseId: "course-1", status: "PUBLISHED", completionRuleJson: { requireAllLessons: true, requiredLessonIds: ["lesson-1"], requiredQuizIds: ["quiz-1"], minimumQuizScore: 80, requiredAssignmentIds: ["assignment-1"], requireAssignmentsGraded: true }, modules: [{ lessons: [{ id: "lesson-1" }] }], quizzes: [{ id: "quiz-1" }], assignments: [{ id: "assignment-1" }] };
-  const enrollment = { id: "enrollment-1", userId: actor.id, organizationId: "org-1", courseId: "course-1", courseVersionId: version.id, status: "ACTIVE", course: { id: "course-1", title: "Course" }, courseVersion: version, certificate: null, lessonProgress: [{ lessonId: "lesson-1", status: "COMPLETED" }], quizAttempts: [{ quizId: "quiz-1", score: 90, passed: true, submittedAt: new Date() }], submissions: [{ assignmentId: "assignment-1", status: "GRADED", score: 100, submittedAt: new Date() }] };
-  const prisma = { enrollment: {}, course: {}, courseVersion: {}, lesson: {}, lessonProgress: {}, quiz: {}, quizAttempt: {}, assignment: {}, assignmentSubmission: {}, certificate: {}, auditLog: {}, domainEvent: {}, outboxMessage: {}, $transaction: async () => undefined } as Record<string, any>;
-  const tx = new Proxy(prisma, { get: (target, property) => target[property as keyof typeof target] });
-  const reset = () => { for (const key of Object.keys(calls) as Array<keyof typeof calls>) calls[key] = 0; recordDomainEvent.mockClear(); auditLog.mockClear(); Object.assign(prisma, { enrollment: {}, course: {}, courseVersion: {}, lesson: {}, lessonProgress: {}, quiz: {}, quizAttempt: {}, assignment: {}, assignmentSubmission: {}, certificate: {}, auditLog: {}, domainEvent: {}, outboxMessage: {} }); };
-  const recordDomainEvent = vi.fn(async () => { calls.events++; return { id: "event-1" }; });
-  const auditLog = vi.fn(async () => { calls.audits++; });
-  return { actor, version, enrollment, prisma, tx, calls, reset, recordDomainEvent, auditLog };
-});
+**Finding 7 - The outbox worker does not deliver anything.**
+`apps/worker/src/worker.ts` lines 52-73 reads 25 `PENDING` rows and marks each
+`SENT`. It publishes nothing and takes no lease or `FOR UPDATE SKIP LOCKED`,
+so two workers process the same rows. "Durable side effect" here means "durably
+recorded". Nothing is delivered.
 
-vi.mock("../prisma.js", () => ({ prisma: testState.prisma }));
-vi.mock("../events.js", () => ({ recordDomainEvent: testState.recordDomainEvent }));
-vi.mock("../audit.js", () => ({ auditLog: testState.auditLog }));
-vi.mock("../middleware/auth.js", () => ({ requireAuth: (request: any, _response: any, next: any) => { request.user = testState.actor; next(); } }));
+**Finding 8 - Operational defaults.** `config.jwtSecret` falls back to
+`"development-only-secret"` (`apps/api/src/config.ts` line 5) with no
+production guard, so a deployment missing `JWT_SECRET` accepts tokens anyone
+can forge. `errorHandler` echoes any `Error.message` with a 500
+(`http.ts` lines 41-44), which is how Findings 2 and 5 leak Prisma text.
 
-import { learnerRouter } from "./learner.routes.js";
+## The route suite, case by case
 
-function response(onJson: () => void) {
-  const value: any = { statusCode: 200, body: undefined };
-  value.status = (code: number) => { value.statusCode = code; return value; };
-  value.json = (body: unknown) => { value.body = body; onJson(); return value; };
-  return value;
-}
+`apps/api/src/routes/learner.routes.test.ts` has **15** cases today. The
+captured evidence from 2026-09-13 counted 13, because two cases were added
+afterwards. Read the file itself rather than a copy.
 
-async function dispatch(method: string, url: string, body: unknown = {}, headers: Record<string, string> = { "x-organization-id": "org-1" }) {
-  const req: any = { method, url, originalUrl: url, headers, body, query: {}, params: {}, user: undefined };
-  let error: unknown;
-  let finish!: () => void;
-  const done = new Promise<void>((resolve) => { finish = resolve; });
-  const res = response(finish);
-  (learnerRouter as any).handle(req, res, (nextError: unknown) => { error = nextError; finish(); });
-  await done;
-  if (error) throw error;
-  return res;
-}
-
-function setupEnrollment(overrides: Record<string, unknown> = {}) {
-  const enrollment = { ...testState.enrollment, ...overrides };
-  testState.prisma.enrollment.findFirst = vi.fn(async ({ where }: any) => enrollment.userId === where.userId && enrollment.organizationId === where.organizationId ? enrollment : null);
-  testState.prisma.enrollment.findUnique = vi.fn(async ({ where }: any) => enrollment.id === where.id && enrollment.userId === where.userId && enrollment.organizationId === where.organizationId ? enrollment : null);
-  testState.prisma.enrollment.update = vi.fn(async ({ data }: any) => ({ ...enrollment, ...data }));
-  testState.prisma.$transaction = vi.fn(async (callback: any) => { testState.calls.transaction++; return callback(testState.tx); });
-  return enrollment;
-}
-
-describe("learner route ownership and completion", () => {
-  it("allows an enrolled learner to complete required lesson, quiz, and assignment work", async () => {
-    testState.reset();
-    setupEnrollment();
-    testState.prisma.certificate.create = vi.fn(async ({ data }: any) => { testState.calls.certificates++; return { id: "certificate-1", ...data }; });
-    const result = await dispatch("POST", "/enrollments/enrollment-1/complete");
-    expect(result.statusCode).toBe(200);
-    expect(result.body.certificate.id).toBe("certificate-1");
-    expect(testState.calls.transaction).toBe(1);
-    expect(testState.calls.certificates).toBe(1);
-    expect(testState.calls.audits).toBe(1);
-    expect(testState.calls.events).toBe(1);
-    expect((testState.recordDomainEvent as any).mock.calls[0][1]).toBe(testState.tx);
-    expect((testState.auditLog as any).mock.calls[0][1]).toBe(testState.tx);
-  });
-
-  it("returns a stable completed result without another certificate or event", async () => {
-    testState.reset();
-    const certificate = { id: "certificate-1", verificationCode: "CERT-1" };
-    setupEnrollment({ status: "COMPLETED", certificate });
-    const result = await dispatch("POST", "/enrollments/enrollment-1/complete");
-    expect(result.statusCode).toBe(200);
-    expect(result.body.certificate).toEqual(certificate);
-    expect(testState.calls.transaction).toBe(0);
-    expect(testState.calls.certificates).toBe(0);
-    expect(testState.calls.events).toBe(0);
-  });
-
-  it("blocks foreign actor and organization enrollment writes", async () => {
-    testState.reset();
-    setupEnrollment({ userId: "other-user" });
-    await expect(dispatch("POST", "/lessons/lesson-1/progress", { enrollmentId: "enrollment-1", status: "COMPLETED" })).rejects.toMatchObject({ status: 404 });
-    testState.reset();
-    setupEnrollment({ organizationId: "org-2" });
-    await expect(dispatch("POST", "/quizzes/quiz-1/attempts", { enrollmentId: "enrollment-1", answers: [] })).rejects.toMatchObject({ status: 404 });
-    await expect(dispatch("POST", "/enrollments/enrollment-1/complete")).rejects.toMatchObject({ status: 404 });
-    expect(testState.calls.transaction).toBe(0);
-  });
-
-  it("blocks lesson, quiz, and assignment IDs from another enrolled version", async () => {
-    testState.reset();
-    setupEnrollment();
-    testState.prisma.lesson.findFirst = vi.fn(async () => null);
-    await expect(dispatch("POST", "/lessons/foreign/progress", { enrollmentId: "enrollment-1", status: "IN_PROGRESS" })).rejects.toMatchObject({ status: 404 });
-    testState.prisma.quiz.findUnique = vi.fn(async () => ({ id: "quiz-foreign", courseVersionId: "version-foreign", questions: [] }));
-    await expect(dispatch("POST", "/quizzes/quiz-foreign/attempts", { enrollmentId: "enrollment-1", answers: [] })).rejects.toMatchObject({ status: 404 });
-    testState.prisma.assignment.findFirst = vi.fn(async () => null);
-    await expect(dispatch("POST", "/assignments/assignment-foreign/submissions", { enrollmentId: "enrollment-1", content: "work" })).rejects.toMatchObject({ status: 404 });
-    expect(testState.calls.transaction).toBe(0);
-  });
-
-  it("does not complete when a required assessment row is absent", async () => {
-    testState.reset();
-    setupEnrollment({ quizAttempts: [], submissions: [] });
-    await expect(dispatch("POST", "/enrollments/enrollment-1/complete")).rejects.toMatchObject({ status: 409 });
-    expect(testState.calls.transaction).toBe(0);
-  });
-
-  it("does not complete when the required quiz attempt is absent", async () => {
-    testState.reset();
-    setupEnrollment({ quizAttempts: [], submissions: testState.enrollment.submissions });
-    await expect(dispatch("POST", "/enrollments/enrollment-1/complete")).rejects.toMatchObject({ status: 409 });
-    expect(testState.calls.transaction).toBe(0);
-  });
-
-  it("does not complete when the required assignment submission is absent", async () => {
-    testState.reset();
-    setupEnrollment({ quizAttempts: testState.enrollment.quizAttempts, submissions: [] });
-    await expect(dispatch("POST", "/enrollments/enrollment-1/complete")).rejects.toMatchObject({ status: 409 });
-    expect(testState.calls.transaction).toBe(0);
-  });
-
-  it("rejects legacy all-lessons rules with no progress rows", async () => {
-    testState.reset();
-    const version = { ...testState.version, completionRuleJson: { requireAllLessons: true, requiredQuizIds: [], requiredAssignmentIds: [] } };
-    setupEnrollment({ courseVersion: version, lessonProgress: [], quizAttempts: [], submissions: [] });
-    await expect(dispatch("POST", "/enrollments/enrollment-1/complete")).rejects.toMatchObject({ status: 409 });
-    expect(testState.calls.transaction).toBe(0);
-  });
-
-  it("rejects malformed stored completion rules before completion writes", async () => {
-    testState.reset();
-    const version = { ...testState.version, completionRuleJson: { minimumQuizScore: 101 } };
-    setupEnrollment({ courseVersion: version });
-    await expect(dispatch("POST", "/enrollments/enrollment-1/complete")).rejects.toMatchObject({ status: 500 });
-    expect(testState.calls.transaction).toBe(0);
-  });
-
-  it("sets progress timestamps without replacing an existing start", async () => {
-    testState.reset();
-    setupEnrollment();
-    const startedAt = new Date("2026-01-01T00:00:00.000Z");
-    testState.prisma.lesson.findFirst = vi.fn(async () => ({ id: "lesson-1" }));
-    testState.prisma.lessonProgress.findUnique = vi.fn(async () => ({ enrollmentId: "enrollment-1", lessonId: "lesson-1", startedAt, completedAt: null }));
-    testState.prisma.lessonProgress.update = vi.fn(async ({ data }: any) => ({ ...data }));
-    const result = await dispatch("POST", "/lessons/lesson-1/progress", { enrollmentId: "enrollment-1", status: "COMPLETED" });
-    expect(result.statusCode).toBe(200);
-    expect(testState.prisma.lessonProgress.update.mock.calls[0][0].data.startedAt).toBe(startedAt);
-    expect(testState.prisma.lessonProgress.update.mock.calls[0][0].data.completedAt).toBeInstanceOf(Date);
-  });
-
-  it("allows a published version with explicitly empty assessment requirements", async () => {
-    testState.reset();
-    const version = { ...testState.version, completionRuleJson: { requireAllLessons: true, requiredLessonIds: ["lesson-1"], requiredQuizIds: [], requiredAssignmentIds: [], requireAssignmentsGraded: true }, quizzes: [], assignments: [] };
-    setupEnrollment({ courseVersion: version, quizAttempts: [], submissions: [] });
-    testState.prisma.certificate.create = vi.fn(async ({ data }: any) => ({ id: "certificate-1", ...data }));
-    const result = await dispatch("POST", "/enrollments/enrollment-1/complete");
-    expect(result.statusCode).toBe(200);
-  });
-
-  it("enrolls only against the course current published version", async () => {
-    testState.reset();
-    testState.prisma.course.findFirst = vi.fn(async () => ({ id: "course-1", organizationId: "org-1", status: "PUBLISHED", currentVersionId: "version-1" }));
-    testState.prisma.courseVersion.findFirst = vi.fn(async ({ where }: any) => where.id === "version-1" ? testState.version : null);
-    testState.prisma.$transaction = vi.fn(async (callback: any) => { testState.calls.transaction++; return callback(testState.prisma); });
-    testState.prisma.enrollment.create = vi.fn(async () => { testState.calls.enrollmentCreate++; return { ...testState.enrollment }; });
-    testState.prisma.lesson.findMany = vi.fn(async () => [{ id: "lesson-1" }]);
-    testState.prisma.lessonProgress.createMany = vi.fn(async () => { testState.calls.progressCreate++; });
-    const result = await dispatch("POST", "/courses/course-1/enroll");
-    expect(result.statusCode).toBe(201);
-    expect(testState.prisma.courseVersion.findFirst).toHaveBeenCalledWith({ where: { id: "version-1", courseId: "course-1", status: "PUBLISHED" } });
-    expect(testState.calls.transaction).toBe(1);
-    expect(testState.calls.events).toBe(1);
-  });
-
-  it("maps a duplicate enrollment transaction to conflict", async () => {
-    testState.reset();
-    testState.prisma.course.findFirst = vi.fn(async () => ({ id: "course-1", organizationId: "org-1", status: "PUBLISHED", currentVersionId: "version-1" }));
-    testState.prisma.courseVersion.findFirst = vi.fn(async () => testState.version);
-    testState.prisma.$transaction = vi.fn(async () => { throw { code: "P2002" }; });
-    await expect(dispatch("POST", "/courses/course-1/enroll")).rejects.toMatchObject({ status: 409 });
-  });
-});
-```
+| # | case | asserts |
+|---|---|---|
+| 1 | completes required lesson, quiz, assignment | 200, 1 transaction/certificate/audit/event, helpers received `tx` |
+| 2 | stable completed result | existing certificate, 0 transactions/events |
+| 3 | foreign actor and organization | 404 on progress, attempts, complete; 0 transactions |
+| 4 | IDs from another version | 404 for lesson, quiz, assignment |
+| 5-7 | absent assessment rows / quiz / assignment | 409, 0 transactions |
+| 8 | legacy all-lessons with no progress | 409 |
+| 9 | malformed stored rule (`minimumQuizScore: 101`) | 500 before any transaction |
+| 10 | progress timestamps | `startedAt` preserved, `completedAt` set |
+| 11 | explicitly empty assessments | 200 |
+| 12 | enroll against current published version | 201, exact `courseVersion.findFirst` args, 1 event |
+| 13 | duplicate enrollment | a real `PrismaClientKnownRequestError` P2002 maps to 409 |
+| 14 | look-alike `{ code: "P2002" }` | not mapped to 409 |
+| 15 | commit fails after writes | the error surfaces; no 201 |

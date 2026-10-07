@@ -12,7 +12,7 @@ Use these identifiers while reading the trace: actor `learner-1`, organization `
 
 **5. Replay.** The next completion request loads the same completed enrollment and certificate. It returns before the completion transaction. This gives a caller the same certificate identity and avoids duplicate side effects. The trace does not imply that two concurrent first requests are serialized by the mock; that property belongs to database constraints and transaction behavior.
 
-To extend the lab, change only one fact at a time: remove the quiz attempt, change the quiz to `version-2`, use `org-2`, or set the enrollment status to `COMPLETED`. Predict the first failing boundary before running the corresponding test. Compare the result with the thirteen learner route cases in [`../apps/api/src/routes/learner.routes.test.ts`](../apps/api/src/routes/learner.routes.test.ts).
+To extend the lab, change only one fact at a time: remove the quiz attempt, change the quiz to `version-2`, use `org-2`, or set the enrollment status to `COMPLETED`. Predict the first failing boundary before running the corresponding test. Compare the result with the fifteen learner route cases in [`../apps/api/src/routes/learner.routes.test.ts`](../apps/api/src/routes/learner.routes.test.ts).
 
 These are router-relative paths. Prefix /learner when sending a real HTTP request through createApp. The trace is a worked sequence, while the recorded fixture tests the individual request boundaries using controlled records; it does not run a database-backed learner journey or execute a real quiz-to-submission-to-certificate flow. A COMPLETED terminal fixture proves guard behavior, with stable stored certificate identity rather than identical relation-rich response shape.
 

@@ -8,7 +8,7 @@
 
 **Action.** The catch inspected only the error's `code` property, so any thrown value carrying `code === "P2002"` produced a confident, wrong 409. I narrowed it to `error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"` at line 101, and wrote two tests either side of the boundary: one stubs `$transaction` to throw a real `new Prisma.PrismaClientKnownRequestError("duplicate", { code: "P2002", clientVersion: "test" })` and expects a 409, the other throws the bare object `{ code: "P2002" }` and asserts the rejection is *not* a 409.
 
-**Result.** `@lms/api` went from 13 passing cases to 16 in that run, `@lms/domain` stayed at 15, and `tsc --noEmit` exited 0 for both workspaces. A misclassified infrastructure failure can no longer reach the client dressed as a business conflict.
+**Result.** `@lms/api` went from 14 cases to 16 (13 to 15 learner-route cases), `@lms/domain` stayed at 15, and `tsc --noEmit` exited 0 for both workspaces. A misclassified infrastructure failure can no longer reach the client dressed as a business conflict.
 
 ## Story 2: refusing to let a mocked test claim a rollback
 
@@ -32,7 +32,7 @@
 
 ## Resume bullets
 
-- Hardened a Prisma error mapping in an Express LMS API so only a real `PrismaClientKnownRequestError` with code P2002 becomes a 409, adding paired positive and negative tests and taking the API suite from 13 to 16 passing cases.
+- Hardened a Prisma error mapping in an Express LMS API so only a real `PrismaClientKnownRequestError` with code P2002 becomes a 409, adding paired positive and negative tests and taking the API suite from 14 to 16 cases.
 - Enforced a three-way ownership invariant (authenticated user, header-selected organization, enrollment's frozen course version) across six learner routes using scoped Prisma `findFirst` lookups, so cross-tenant and cross-version access returns 404 rather than leaking existence.
 - Implemented transactional completion that commits an enrollment update, certificate issuance, audit row and domain event plus outbox message in a single `$transaction`, with an idempotent replay path that returns the first result instead of reissuing a certificate.
 - Wrote a defensive parser for author-supplied completion rules that rejects non-object, duplicate, out-of-version and out-of-range values before any write, converting a class of silent mis-grading into a fail-fast configuration error.
@@ -44,7 +44,7 @@ Master 6 is a multi-tenant LMS in a Node workspace: an Express and Prisma API, a
 
 ## What I would do next
 
-- Close the quiz-attempt race. The count and the insert both happen inside the transaction but under read-committed isolation two concurrent attempts can both pass the `maxAttempts` check; a unique constraint on `(enrollmentId, quizId, attemptNumber)` is the right fix, not more application logic.
+- Close the quiz-attempt race. The count and the insert both happen inside the transaction but under read-committed isolation two concurrent attempts can both pass the `maxAttempts` check. The existing unique constraint on `(quizId, enrollmentId, attemptNumber)` already stops the second insert; the remaining work is mapping its P2002 to a 409 instead of a 500.
 - Replace the derived `CERT-` plus id-suffix verification code with a random value stored on the row, since today it is guessable and has no collision retry.
 - Stop the assignment upsert silently reverting a `GRADED` submission to `SUBMITTED`, which quietly removes a learner from completion eligibility.
 - Add the integration suite the testing chapter describes, so rollback and the unique constraint are proven rather than reasoned about.
